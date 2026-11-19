@@ -42,6 +42,7 @@ from hdhr_proxy.guide_match import (
     write_wmc_auto_match_mxf,
 )
 from hdhr_proxy.mxf import (
+    Epg123NoTunersError,
     latest_programme_end,
     write_mxf,
     import_mxf,
@@ -530,13 +531,22 @@ def run_proxy(cfg: Config):
                     logger.info("Importing lineup-matched guide into the WMC internal database via EPG123 auto-match when available")
                     try:
                         import_and_map_mxf_with_epg123(auto_match_mxf_path)
+                    except Epg123NoTunersError as exc:
+                        logger.error("%s", exc)
+                        logger.error(
+                            "Skipping the loadmxf fallback because WMC has no tuner lineup to attach "
+                            "the guide to. Complete WMC TV Setup / channel scan, then run the import again."
+                        )
                     except FileNotFoundError:
                         logger.warning("EPG123 client not found; falling back to loadmxf.exe without automatic channel mapping.")
                         import_mxf(auto_match_mxf_path)
+                        run_wmc_post_import_tasks()
                     except Exception as exc:
                         logger.warning("EPG123 auto-match import failed; falling back to loadmxf.exe. %s", exc)
                         import_mxf(auto_match_mxf_path)
-                    run_wmc_post_import_tasks()
+                        run_wmc_post_import_tasks()
+                    else:
+                        run_wmc_post_import_tasks()
                 else:
                     if vista_mode and not vista_guide_xml_path:
                         vista_guide_xml_path = write_vista_guide_xml(

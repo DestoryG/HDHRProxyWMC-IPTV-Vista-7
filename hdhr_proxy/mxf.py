@@ -24,6 +24,10 @@ MCEPG_PUBLIC_KEY = "002400000480000094000000060200000024000052534131000400000100
 _EPG123_STATION_ID_CACHE: Optional[Dict[str, str]] = None
 _EPG123_INCLUDED_LINEUPS_CACHE: Optional[List[str]] = None
 
+
+class Epg123NoTunersError(RuntimeError):
+    """EPG123 refused to import because WMC has no configured tuners."""
+
 ROVI_STYLE_KEYWORDS = [
     ("k1", "Educational"),
     ("k1000", "All"),
@@ -382,7 +386,26 @@ def import_and_map_mxf_with_epg123(output_path: str, verbose: bool = True) -> No
     if verbose:
         cmd.append("-VERBOSE")
     logger.info("Importing and auto-mapping guide with EPG123 client: %s", output_path)
-    subprocess.run(cmd, check=True)
+    result = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    output = result.stdout or ""
+    for line in output.splitlines():
+        if line.strip():
+            logger.info("EPG123: %s", line.rstrip())
+    if result.returncode != 0:
+        lowered = output.lower()
+        if "no devices/tuners configured" in lowered or "perform wmc tv setup" in lowered:
+            raise Epg123NoTunersError(
+                "EPG123 aborted because Windows Media Center has no configured tuners. "
+                "Run WMC TV Setup / channel scan first, then import the guide again."
+            )
+        raise subprocess.CalledProcessError(result.returncode, cmd, output=output)
 
 
 def _find_epg123_client() -> Optional[str]:
